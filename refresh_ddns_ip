@@ -1,0 +1,18 @@
+#!/bin/bash
+# version: 1.0.1
+
+set -e
+
+#last_ip=$(cat /etc/last_ip)
+last_ip=$(/usr/bin/cloudflare getip home.wilscloud.top 2>/dev/null)
+echo "record IP:" $last_ip
+current_ip=$(/usr/bin/getip 2>/dev/null)
+echo "current IP:" $current_ip
+if [[ $last_ip != $current_ip ]]
+then
+	/usr/bin/cloudflare add home.wilscloud.top $current_ip
+	echo $current_ip > /etc/last_ip
+	echo "updated DDNS IP."
+else
+	echo "IP not changed, not need to update"
+fi

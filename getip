@@ -1,0 +1,11 @@
+#!/bin/bash
+# version: 1.0.1
+
+set -e
+
+ip=$(curl -s https://node3.wilscloud.top/checkip.php)
+if [[ $ip == "127.0.0.1" || -z $ip ]]; then
+    #echo "using backup link..."
+	ip=$(curl -s https://searchplugin.csdn.net/api/v1/ip/get?ip= | jq -r '.data.ip')
+fi
+echo $ip

@@ -1,0 +1,160 @@
+#!/bin/bash
+# version: 1.0.1
+
+set -e
+
+# 请将以下值替换为您的实际 Zone ID 和 API 令牌
+ZONE_ID="15f3b8b4107534e231b4c9fa991b376c"
+API_TOKEN="Z1raRGWwWtn5o_bfztv8h3Yn5EGlVpM-0BkwOss0"
+
+# 定义一个函数获取WAN口IP地址
+get_wan_ip() {
+	local ip=$(curl https://node3.wilscloud.top/checkip.php)
+	if [[ $ip == "127.0.0.1" || -z $ip ]]; then
+    	#echo "using backup link..."
+    	ip=$(curl -s https://searchplugin.csdn.net/api/v1/ip/get?ip= | jq -r '.data.ip')
+	fi
+	echo "$ip"
+}
+
+# 定义一个函数来获取 DNS 记录的 ID
+get_record_id() {
+    curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$1" \
+         -H "Authorization: Bearer $API_TOKEN" \
+         -H "Content-Type: application/json" | jq -r '.result[0].id'
+}
+
+# 定义一个函数来获取 DNS 记录的详细信息
+get_record_details() {
+    curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$1" \
+         -H "Authorization: Bearer $API_TOKEN" \
+         -H "Content-Type: application/json" | jq -r '"ID:\(.result.id)\nName:\(.result.name)\nType:\(.result.type)\nIP:\(.result.content)\nCDN:\(.result.proxied)"'
+}
+
+get_record_ip() {
+	curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$1" \
+         -H "Authorization: Bearer $API_TOKEN" \
+         -H "Content-Type: application/json" | jq -r '.result.content'
+}
+
+# 定义一个函数来添加或更新 DNS 记录
+add_or_update_record() {
+    local record_id=$(get_record_id "$1")
+    local method="POST"
+    local url="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records"
+    local proxied_status="false"  # 默认状态
+
+    if [ "$record_id" != "null" ]; then
+        method="PUT"
+        url="$url/$record_id"
+        # 获取当前记录的"proxied"状态
+        proxied_status=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$record_id" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H "Content-Type: application/json" | jq -r '.result.proxied')
+    fi
+
+    curl -s -X $method $url \
+         -H "Authorization: Bearer $API_TOKEN" \
+         -H "Content-Type: application/json" \
+         -d '{
+             "type": "A",
+             "name": "'"$1"'",
+             "content": "'"$2"'",
+             "ttl": 120,
+             "proxied": '"$proxied_status"'
+         }' > /dev/null
+
+    echo "$(get_record_details "$(get_record_id "$1")")"
+}
+
+# 定义一个函数来删除 DNS 记录
+delete_record() {
+    local record_id=$(get_record_id "$1")
+
+    if [ "$record_id" != "null" ]; then
+        curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$record_id" \
+             -H "Authorization: Bearer $API_TOKEN" \
+             -H "Content-Type: application/json" > /dev/null
+    fi
+}
+
+# 定义一个函数来切换 DNS 记录的 CDN 状态
+toggle_cdn() {
+    local record_id=$(get_record_id "$1")
+
+    if [ "$record_id" != "null" ]; then
+        local record_details=$(get_record_details "$record_id")
+        local record_ip=$(echo "$record_details" | grep "IP:" | cut -d':' -f2 | xargs)
+        local record_cdn=$(echo "$record_details" | grep "CDN:" | cut -d':' -f2 | xargs)
+
+        echo "$record_details"
+        read -p "Do you want to change the CDN status? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            local new_cdn="true"
+            if [ "$record_cdn" = "true" ]; then
+                new_cdn="false"
+            fi
+
+            curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$record_id" \
+                 -H "Authorization: Bearer $API_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                     "type": "A",
+                     "name": "'"$1"'",
+                     "content": "'"$record_ip"'",
+                     "ttl": 120,
+                     "proxied": '"$new_cdn"'
+                 }' > /dev/null
+
+            echo "$(get_record_details "$record_id")"
+        fi
+    fi
+}
+
+display_help() {
+	echo "cloudflare [command] [args]"
+	echo "        "
+	echo "command:"
+	echo "  get [domain]      - 获取[domain]的DNS记录"
+    echo "  getip [domain]    - 获取[domain]的IP地址或CNAME记录"
+	echo "  add [domain] [ip] - 添加或更新[domain]的[ip]地址"
+	echo "  ddns [domain]     - 把当前的WAN IP地址更新到[domain]的DNS记录中"
+	echo "  del [domain]      - 删除[doimain]的DNS记录"
+	echo "  cdn [domain]      - 调换[domain]记录的CDN设置"
+	echo "  -h  --help        - 显示帮助"
+}
+
+# 根据参数执行相应的操作
+case "$1" in
+    "get")
+        echo "$(get_record_details "$(get_record_id "$2")")"
+        ;;
+	"getip")
+		echo "$(get_record_ip "$(get_record_id "$2")")"
+		;;
+    "add")
+        add_or_update_record "$2" "$3"
+        ;;
+    "ddns")
+        add_or_update_record "$2" $(get_wan_ip)
+		;;
+    "del")
+        delete_record "$2"
+        ;;
+    "cdn")
+        toggle_cdn "$2"
+        ;;
+    "-h")
+		display_help
+		;;
+	"--help")
+		display_help
+		;;
+    *)
+        curl -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+             -H "Authorization: Bearer $API_TOKEN" \
+             -H "Content-Type: application/json" | \
+        jq -r '.result[] | "\(.id) \(.name) \(.type) \(.content) \(.proxied)"'
+        ;;
+esac
