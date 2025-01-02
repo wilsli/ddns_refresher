@@ -1,17 +1,53 @@
 #!/bin/bash
-# version: 1.0.1
 
 set -e
 
-#last_ip=$(cat /etc/last_ip)
-last_ip=$(/usr/bin/cloudflare getip home.wilscloud.top 2>/dev/null)
-echo "record IP:" $last_ip
+version="1.1.0"
+
+# Check if no options were provided
+if [[ $# -eq 0 ]]; then
+  echo "Usage: $0 [-c config_file_path] [-h] [-v]"
+  echo "  -c, --config: Specify the path to the configuration file."
+  echo "  -h, --help: Display this help message."
+  echo "  -v, --version: Display the version of the script."
+  exit 0
+fi
+
+# Parse command-line options
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -c|--config)
+      conf=$2
+      shift 2
+      ;;
+    -h|--help)
+	  echo "Usage: $0 [-c config_file_path] [-h] [-v]"
+      echo "  -c, --config: Specify the path to the configuration file."
+      echo "  -h, --help: Display this help message."
+      echo "  -v, --version: Display the version of the script."
+      exit 0
+      ;;
+    -v|--version)
+	  echo "version: $version"
+	  exit 0
+	  ;;
+    * )
+      echo "Usage: $0 [-c config_file_path] [-h] [-v]"
+      exit 1
+      ;;
+  esac
+done
+
+last_ip=$(/usr/bin/cloudflare -p $conf getip home.wilscloud.top 2>/dev/null)
+
 current_ip=$(/usr/bin/getip 2>/dev/null)
-echo "current IP:" $current_ip
+
 if [[ $last_ip != $current_ip ]]
 then
-	/usr/bin/cloudflare add home.wilscloud.top $current_ip
+	/usr/bin/cloudflare -p $conf add home.wilscloud.top $current_ip
 	echo $current_ip > /etc/last_ip
+	echo "record IP:" $last_ip
+	echo "current IP:" $current_ip
 	echo "updated DDNS IP."
 else
 	echo "IP not changed, not need to update"

@@ -1,11 +1,71 @@
 #!/bin/bash
-# version: 1.0.1
+version="1.1.0"
 
 set -e
 
 # 请将以下值替换为您的实际 Zone ID 和 API 令牌
-ZONE_ID="15f3b8b4107534e231b4c9fa991b376c"
-API_TOKEN="Z1raRGWwWtn5o_bfztv8h3Yn5EGlVpM-0BkwOss0"
+#ZONE_ID="15f3b8b4107534e231b4c9fa991b376c"
+#API_TOKEN="Z1raRGWwWtn5o_bfztv8h3Yn5EGlVpM-0BkwOss0"
+ZONE_ID=""
+API_TOKEN=""
+
+display_help() {
+    echo "cloudflare -p <file> [command] [args]"
+    echo "        "
+    echo "  -p [file]         - 从配置文件<file>中读取ZONE_ID和API_TOKEN(必填)"
+    echo "                      配置文件格式："
+    echo "                           ZONE_ID=\"your_ZONE_ID\""
+    echo "                           API_TOKEN=\"your_API_TOKEN\""
+    echo "command:"
+    echo "  get [domain]      - 获取[domain]的DNS记录"
+    echo "  getip [domain]    - 获取[domain]的IP地址或CNAME记录"
+    echo "  add [domain] [ip] - 添加或更新[domain]的[ip]地址"
+    echo "  ddns [domain]     - 把当前的WAN IP地址更新到[domain]的DNS记录中"
+    echo "  del [domain]      - 删除[doimain]的DNS记录"
+    echo "  cdn [domain]      - 调换[domain]记录的CDN设置"
+    echo "  -h  --help        - 显示帮助"
+	echo "  -v  --version     - 显示版本"
+}
+
+# Function to parse the configuration file
+parse_config() {
+    local config_file="$1"
+    if [[ ! -f "$config_file" ]]; then
+        echo "$config_file: No such file"
+        exit 1
+    fi
+    # Source the configuration file to load the variables
+    source "$config_file"
+    # Check if ZONE_ID and API_TOKEN are set
+    if [[ -z "$ZONE_ID" || -z "$API_TOKEN" ]]; then
+        echo "Configuration file should contain ZONE_ID and API_TOKEN."
+        exit 1
+    fi
+}
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    display_help
+    exit 0
+fi
+
+if [[ "$1" == "-v" || "$1" == "--version" ]]; then
+	echo "version: $version"
+	exit 0
+fi
+
+# Check if -p parameter is provided and valid
+if [[ "$1" != "-p" ]]; then
+    echo "Please provide a valid configuration file using the -p parameter."
+    exit 1
+fi
+
+if [[ -z "$2" ]]; then
+    echo "Please provide a valid configuration file path."
+    exit 1
+fi
+
+parse_config "$2"
+shift 2
 
 # 定义一个函数获取WAN口IP地址
 get_wan_ip() {
@@ -110,19 +170,6 @@ toggle_cdn() {
             echo "$(get_record_details "$record_id")"
         fi
     fi
-}
-
-display_help() {
-	echo "cloudflare [command] [args]"
-	echo "        "
-	echo "command:"
-	echo "  get [domain]      - 获取[domain]的DNS记录"
-    echo "  getip [domain]    - 获取[domain]的IP地址或CNAME记录"
-	echo "  add [domain] [ip] - 添加或更新[domain]的[ip]地址"
-	echo "  ddns [domain]     - 把当前的WAN IP地址更新到[domain]的DNS记录中"
-	echo "  del [domain]      - 删除[doimain]的DNS记录"
-	echo "  cdn [domain]      - 调换[domain]记录的CDN设置"
-	echo "  -h  --help        - 显示帮助"
 }
 
 # 根据参数执行相应的操作
